@@ -1,11 +1,11 @@
-# Archive geospatial files from a directory
+# Upload geospatial files from a directory to a DataONE node
 #
 # Iterate over the subdirectories, each of which should contain one or more subdirectories
 # that contain a data layer in a directory with its ancillary files.  Each top-level directory
 # will be saved as a data package, and will contain a data entity for each of the second-level
 # subdirectores, which will be uploaded as zip archvies.  In each top-level directory, we will
 # search for a text file with metadata (title, creator(s), spatial extent, temporal extent,
-# abstract, keywords, license).
+# abstract, keywords, license), and use that to create overall dataset metadata.
 #
 # Matt Jones 2015-02-09
 
@@ -15,7 +15,7 @@ library(XML)
 library(EML)
 library(digest)
 
-archive <- function(d) {
+upload_datasets <- function(d) {
     savewd <- getwd()
     print(paste("Processing ", d))
     setwd(d)
@@ -28,7 +28,8 @@ archive <- function(d) {
         zip(zipfile, do)
 
         # upload data zip to the KNB
-        identifier <- upload_object(zipfile, "application/zip", assignDOI=FALSE)
+        #identifier <- upload_object(zipfile, "application/zip", assignDOI=FALSE)
+        identifier <- paste0("urn:uuid:", UUIDgenerate())
         # TODO: add identifier to list of uploaded objects
         print(paste("Uploaded: ", identifier))
 
@@ -38,19 +39,48 @@ archive <- function(d) {
 
     # create metadata for the directory
     mdfile <- "metadata.R"
-    success <- source(mdfile, local=TRUE)
-
+    success <- source(mdfile, local=FALSE)
+    metadata_id <- paste0("urn:uuid:", UUIDgenerate())
+    system <- "uuid"
+    eml <- make_eml(metadata_id, system, title, creators)
+    eml_xml <- as(eml, "XMLInternalElementNode")
+    #print(eml_xml)
+    #saveXML(eml_xml, file = file)
 
     # upload metadata with DOI
+
     # create and upload resource map
 
     # Revert back to our calling directory
     setwd(savewd)
 }
 
+make_eml <- function(id, system, title, creators) {
+    #dt <- eml_dataTable(dat, description=description)
+    creator <- new("ListOfcreator", lapply(as.list(with(creators, paste(given, " ", surname, " ", "<", email, ">", sep=""))), as, "creator"))
+    ds <- new("dataset",
+              title = title,
+              creator = creator,
+              contact = as(creator[[1]], "contact"))
+              #coverage = new("coverage"),
+              #dataTable = c(dt),
+              #methods = new("methods"))
+
+    eml <- new("eml",
+              packageId = id,
+              system = system,
+              dataset = ds)
+    return(eml)
+}
+
 upload_object <- function(filename, format, assignDOI=FALSE, public=TRUE) {
     cn <- CNode("STAGING2")
     mn <- getMNode(cn, "urn:node:mnTestKNB")
+
+    # Ensure the user is logged in before the upload
+    cm <- CertificateManager()
+    user <- showClientSubject(cm)
+    isExpired <- isCertExpired(cm)
 
     # Generate a unique identifier for the object
     if (assignDOI) {
@@ -59,11 +89,6 @@ upload_object <- function(filename, format, assignDOI=FALSE, public=TRUE) {
     } else {
         newid <- paste0("urn:uuid:", UUIDgenerate())
     }
-
-    # Ensure the user is logged in before the upload
-    cm <- CertificateManager()
-    user <- showClientSubject(cm)
-    isExpired <- isCertExpired(cm)
 
     # Create SystemMetadata for the object
     size <- file.info(filename)$size
@@ -86,6 +111,6 @@ main <- function() {
     setwd("/Users/jones/datasets")
     ds <- list.dirs(".", full.names=FALSE, recursive=FALSE)
     for(d in ds) {
-        archive(d)
+        upload_datasets(d)
     }
 }
