@@ -10,12 +10,13 @@
 # Matt Jones 2015-02-09
 
 library(dataone)
+library(datapackage)
 library(uuid)
 library(XML)
 library(EML)
 library(digest)
 
-upload_datasets <- function(d) {
+upload_datasets <- function(d, assignDOI=FALSE) {
     savewd <- getwd()
     print(paste("Processing ", d))
     setwd(d)
@@ -27,27 +28,43 @@ upload_datasets <- function(d) {
         zipfile <- paste0(do, ".zip")
         zip(zipfile, do)
 
-        # upload data zip to the KNB
-        #identifier <- upload_object(zipfile, "application/zip", assignDOI=FALSE)
+        # Generate a unique identifier for the object
         identifier <- paste0("urn:uuid:", UUIDgenerate())
+
+        # upload data zip to the repository
+        identifier <- upload_object(zipfile, identifier, "application/zip")
+
         # TODO: add identifier to list of uploaded objects
-        print(paste("Uploaded: ", identifier))
+        message(paste("Uploaded: ", identifier))
 
         # clean up
-        unlink(zipfile)
+        #unlink(zipfile)
     }
 
     # create metadata for the directory
     mdfile <- "metadata.R"
     success <- source(mdfile, local=FALSE)
-    metadata_id <- paste0("urn:uuid:", UUIDgenerate())
-    system <- "uuid"
+
+    # Generate a unique identifier for the object
+    if (assignDOI) {
+        metadata_id <- generateIdentifier(mn, "DOI")
+        # TODO: check if we actually got one, if not then error
+        system <- "doi"
+    } else {
+        metadata_id <- paste0("urn:uuid:", UUIDgenerate())
+        system <- "uuid"
+    }
+
     eml <- make_eml(metadata_id, system, title, creators)
     eml_xml <- as(eml, "XMLInternalElementNode")
     #print(eml_xml)
-    #saveXML(eml_xml, file = file)
+    file <- tempfile()
+    saveXML(eml_xml, file = file)
 
-    # upload metadata with DOI
+    # upload metadata to the repository
+    return_id <- upload_object(file, metadata_id, "eml://ecoinformatics.org/eml-2.1.1")
+    message(paste0("Uploaded metadata with id: ", return_id))
+    unlink(file)
 
     # create and upload resource map
 
@@ -73,7 +90,7 @@ make_eml <- function(id, system, title, creators) {
     return(eml)
 }
 
-upload_object <- function(filename, format, assignDOI=FALSE, public=TRUE) {
+upload_object <- function(filename, newid, format, public=TRUE) {
     cn <- CNode("STAGING2")
     mn <- getMNode(cn, "urn:node:mnTestKNB")
 
@@ -81,14 +98,6 @@ upload_object <- function(filename, format, assignDOI=FALSE, public=TRUE) {
     cm <- CertificateManager()
     user <- showClientSubject(cm)
     isExpired <- isCertExpired(cm)
-
-    # Generate a unique identifier for the object
-    if (assignDOI) {
-        newid <- generateIdentifier(mn, "DOI")
-        # TODO: check if we actually got one, if not then error
-    } else {
-        newid <- paste0("urn:uuid:", UUIDgenerate())
-    }
 
     # Create SystemMetadata for the object
     size <- file.info(filename)$size
@@ -100,8 +109,9 @@ upload_object <- function(filename, format, assignDOI=FALSE, public=TRUE) {
 
     # Upload the data to the MN using create(), checking for success and a returned identifier
     created_id <- create(mn, newid, filename, sysmeta)
-    if (!grepl(newid, xmlValue(xmlRoot(created_id)))) {
+    if (is.null(created_id) | !grepl(newid, xmlValue(xmlRoot(created_id)))) {
         # TODO: Process the error
+        message(paste0("Error on returned identifier: ", created_id))
     } else {
         return(newid)
     }
