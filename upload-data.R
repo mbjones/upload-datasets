@@ -21,24 +21,36 @@ upload_datasets <- function(d, assignDOI=FALSE) {
     print(paste("Processing ", d))
     setwd(d)
 
+    # Create a DataPackage to track all of the data objects that are created
+    dp <- DataPackage()
+    format <- "application/zip"
+    node <- "urn:node:mnTestKNB"
+    cm <- CertificateManager()
+    user <- showClientSubject(cm)
+
     # List all of the directories, each should represent one data object
     do_list <- list.dirs(".", full.names=FALSE, recursive=FALSE)
     for (do in do_list) {
         # zip up the directory
         zipfile <- paste0(do, ".zip")
         zip(zipfile, do)
+        fq_zipfile <- normalizePath(zipfile)
 
         # Generate a unique identifier for the object
         identifier <- paste0("urn:uuid:", UUIDgenerate())
 
-        # upload data zip to the repository
-        identifier <- upload_object(zipfile, identifier, "application/zip")
+        # upload data zip to the data repository
+        identifier <- upload_object(zipfile, identifier, format)
+
+        # Create a DataObject and add it to the DataPackage for tracking
+        data_object <- new("DataObject", id=identifier, format=format, user=user, mnNodeId=node, filename=fq_zipfile)
+        addData(dp, data_object)
 
         # TODO: add identifier to list of uploaded objects
         message(paste("Uploaded: ", identifier))
 
         # clean up
-        #unlink(zipfile)
+        unlink(zipfile)
     }
 
     # create metadata for the directory
@@ -58,15 +70,25 @@ upload_datasets <- function(d, assignDOI=FALSE) {
     eml <- make_eml(metadata_id, system, title, creators)
     eml_xml <- as(eml, "XMLInternalElementNode")
     #print(eml_xml)
-    file <- tempfile()
-    saveXML(eml_xml, file = file)
+    eml_file <- tempfile()
+    saveXML(eml_xml, file = eml_file)
 
     # upload metadata to the repository
-    return_id <- upload_object(file, metadata_id, "eml://ecoinformatics.org/eml-2.1.1")
+    return_id <- upload_object(eml_file, metadata_id, "eml://ecoinformatics.org/eml-2.1.1")
     message(paste0("Uploaded metadata with id: ", return_id))
-    unlink(file)
 
-    # create and upload resource map
+    # create and upload package linking the data files and metadata
+    data_id_list <- getIdentifiers(dp)
+    mdo <- new("DataObject", id=metadata_id, filename=eml_file, format="eml://ecoinformatics.org/eml-2.1.1", user=user, mnNodeId=node)
+    addData(dp, mdo)
+    unlink(eml_file)
+    insertRelationship(dp, subjectID=metadata_id, objectIDs=data_id_list)
+    tf <- tempfile()
+    serialization_id <- paste0("urn:uuid:", UUIDgenerate())
+    status <- serializePackage(dp, tf, id=serialization_id)
+    return_id <- upload_object(tf, serialization_id, "http://www.openarchives.org/ore/terms")
+    message(paste0("Uploaded data package with id: ", return_id))
+    unlink(tf)
 
     # Revert back to our calling directory
     setwd(savewd)
