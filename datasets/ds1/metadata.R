@@ -7,4 +7,5 @@ creators <- data.frame(
 abstract <- "This is an abstract for the data set. As this is only a test, it is not very interesting."
 methodDescription <- "This is a placeholder for a method description.
 It might have more than one line."
+geo_coverage <- geo_cov("Southeast Alaska", west=133, east=127, north=59, south=51)
 TRUE

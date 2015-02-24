@@ -74,7 +74,7 @@ upload_datasets <- function(d, mn, assignDOI=FALSE) {
         system <- "uuid"
     }
 
-    eml <- make_eml(metadata_id, system, title, creators, methodDescription)
+    eml <- make_eml(metadata_id, system, title, creators, methodDescription, geo_coverage)
     eml_xml <- as(eml, "XMLInternalElementNode")
     #print(eml_xml)
     eml_file <- tempfile()
@@ -101,12 +101,24 @@ upload_datasets <- function(d, mn, assignDOI=FALSE) {
     setwd(savewd)
 }
 
+#' Create a geographic coverage element from a description and bounding coordinates
+geo_cov <- function(geoDescription, west, east, north, south) {
+    bc <- new("boundingCoordinates", westBoundingCoordinate=west, eastBoundingCoordinate=east, northBoundingCoordinate=north, southBoundingCoordinate=south)
+    geoDescription="Southeast Alaska"
+    gc <- new("geographicCoverage", geographicDescription=geoDescription, boundingCoordinates=bc)
+    return(gc)
+}
+
+cov <- function(gc) {
+    coverage <- new("coverage", geographicCoverage=gc)
+    return(coverage)
+}
+
 #' Create a minimal EML document.
 #' Creating EML should be more complete, but this minimal example will suffice to create a valid document.
-make_eml <- function(id, system, title, creators, methodDescription=NA) {
+make_eml <- function(id, system, title, creators, methodDescription=NA, geo_coverage=NA) {
     #dt <- eml_dataTable(dat, description=description)
     creator <- new("ListOfcreator", lapply(as.list(with(creators, paste(given, " ", surname, " ", "<", email, ">", sep=""))), as, "creator"))
-
     ds <- new("dataset",
               title = title,
               abstract = abstract,
@@ -121,6 +133,10 @@ make_eml <- function(id, system, title, creators, methodDescription=NA) {
         ms <- new("methodStep", description=methodDescription)
         listms <- new("ListOfmethodStep", list(ms))
         ds@methods <- new("methods", methodStep=listms)
+    }
+    if (!is.na(geo_coverage)) {
+        coverage <- cov(geo_coverage)
+        ds@coverage <- coverage
     }
     eml <- new("eml",
               packageId = id,
