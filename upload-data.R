@@ -16,7 +16,14 @@ library(XML)
 library(EML)
 library(digest)
 
-upload_datasets <- function(d, assignDOI=FALSE) {
+#' Iterate over the data sets in a directory.
+#' This function is passed a directory \code{'d'}, which contains a set of subdirectories,
+#' each of which represents a data set. For each subdirectory, zip up the contents, generate
+#' a new identifier, upload the zipfile to a repository, and add it to a DataPackage for
+#' later inclusion in the dataset. Once all of the datasets are uploaded, source the associated
+#' "metadata.R" file in each directory, use this to populate an EML metadata description, and
+#' upload the EML and the associated DataPackage to the repository.
+upload_datasets <- function(d, mn, assignDOI=FALSE) {
     savewd <- getwd()
     print(paste("Processing ", d))
     setwd(d)
@@ -40,7 +47,7 @@ upload_datasets <- function(d, assignDOI=FALSE) {
         identifier <- paste0("urn:uuid:", UUIDgenerate())
 
         # upload data zip to the data repository
-        identifier <- upload_object(zipfile, identifier, format)
+        identifier <- upload_object(mn, zipfile, identifier, format)
 
         # Create a DataObject and add it to the DataPackage for tracking
         data_object <- new("DataObject", id=identifier, format=format, user=user, mnNodeId=node, filename=fq_zipfile)
@@ -67,14 +74,14 @@ upload_datasets <- function(d, assignDOI=FALSE) {
         system <- "uuid"
     }
 
-    eml <- make_eml(metadata_id, system, title, creators)
+    eml <- make_eml(metadata_id, system, title, creators, methodDescription)
     eml_xml <- as(eml, "XMLInternalElementNode")
     #print(eml_xml)
     eml_file <- tempfile()
     saveXML(eml_xml, file = eml_file)
 
     # upload metadata to the repository
-    return_id <- upload_object(eml_file, metadata_id, "eml://ecoinformatics.org/eml-2.1.1")
+    return_id <- upload_object(mn, eml_file, metadata_id, "eml://ecoinformatics.org/eml-2.1.1")
     message(paste0("Uploaded metadata with id: ", return_id))
 
     # create and upload package linking the data files and metadata
@@ -86,7 +93,7 @@ upload_datasets <- function(d, assignDOI=FALSE) {
     tf <- tempfile()
     serialization_id <- paste0("urn:uuid:", UUIDgenerate())
     status <- serializePackage(dp, tf, id=serialization_id)
-    return_id <- upload_object(tf, serialization_id, "http://www.openarchives.org/ore/terms")
+    return_id <- upload_object(mn, tf, serialization_id, "http://www.openarchives.org/ore/terms")
     message(paste0("Uploaded data package with id: ", return_id))
     unlink(tf)
 
@@ -94,17 +101,27 @@ upload_datasets <- function(d, assignDOI=FALSE) {
     setwd(savewd)
 }
 
-make_eml <- function(id, system, title, creators) {
+#' Create a minimal EML document.
+#' Creating EML should be more complete, but this minimal example will suffice to create a valid document.
+make_eml <- function(id, system, title, creators, methodDescription=NA) {
     #dt <- eml_dataTable(dat, description=description)
     creator <- new("ListOfcreator", lapply(as.list(with(creators, paste(given, " ", surname, " ", "<", email, ">", sep=""))), as, "creator"))
+
     ds <- new("dataset",
               title = title,
+              abstract = abstract,
               creator = creator,
-              contact = as(creator[[1]], "contact"))
+              contact = as(creator[[1]], "contact"),
               #coverage = new("coverage"),
+              pubDate = as.character(Sys.Date())
               #dataTable = c(dt),
               #methods = new("methods"))
-
+             )
+    if (!is.na(methodDescription)) {
+        ms <- new("methodStep", description=methodDescription)
+        listms <- new("ListOfmethodStep", list(ms))
+        ds@methods <- new("methods", methodStep=listms)
+    }
     eml <- new("eml",
               packageId = id,
               system = system,
@@ -112,9 +129,8 @@ make_eml <- function(id, system, title, creators) {
     return(eml)
 }
 
-upload_object <- function(filename, newid, format, public=TRUE) {
-    cn <- CNode("STAGING2")
-    mn <- getMNode(cn, "urn:node:mnTestKNB")
+#' Upload an object to a DataONE repository
+upload_object <- function(mn, filename, newid, format, public=TRUE) {
 
     # Ensure the user is logged in before the upload
     cm <- CertificateManager()
@@ -139,10 +155,16 @@ upload_object <- function(filename, newid, format, public=TRUE) {
     }
 }
 
+#' main method to iterate across directories, uploading each data set
 main <- function() {
-    setwd("/Users/jones/datasets")
+    cn <- CNode("STAGING2")                     # Use Testing repository
+    mn <- getMNode(cn, "urn:node:mnTestKNB")    # Use Testing repository
+    #cn <- CNode()                               # Use Production repository
+    #mn <- getMNode(cn, "urn:node:KNB")          # Use Production repository
+    setwd("datasets")
     ds <- list.dirs(".", full.names=FALSE, recursive=FALSE)
     for(d in ds) {
-        upload_datasets(d)
+        upload_datasets(d, mn, assignDOI=FALSE)
     }
+    setwd("..")
 }
