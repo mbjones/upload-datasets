@@ -153,7 +153,7 @@ make_eml <- function(id, system, title, creators, methodDescription=NA, geo_cove
 }
 
 #' Upload an object to a DataONE repository
-upload_object <- function(mn, filename, newid, format, public=TRUE) {
+upload_object <- function(mn, filename, newid, format, public=TRUE, replicate=FALSE) {
 
     # Ensure the user is logged in before the upload
     cm <- CertificateManager()
@@ -164,6 +164,9 @@ upload_object <- function(mn, filename, newid, format, public=TRUE) {
     size <- file.info(filename)$size
     sha1 <- digest(filename, algo="sha1", serialize=FALSE, file=TRUE)
     sysmeta <- new("SystemMetadata", identifier=newid, formatId=format, size=size, submitter=user, rightsHolder=user, checksum=sha1, originMemberNode=mn@identifier, authoritativeMemberNode=mn@identifier)
+    sysmeta@replicationAllowed <- replicate
+    sysmeta@numberReplicas <- 2
+    sysmeta@preferredNodes <- list("urn:node:mnUCSB1", "urn:node:mnUNM1", "urn:node:mnORC1")
     if (public) {
         sysmeta <- addAccessRule(sysmeta, "public", "read")
     }
