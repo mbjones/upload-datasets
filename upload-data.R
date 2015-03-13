@@ -74,7 +74,7 @@ upload_datasets <- function(d, mn, assignDOI=FALSE) {
         system <- "uuid"
     }
 
-    eml <- make_eml(metadata_id, system, title, creators, methodDescription, geo_coverage, temp_coverage)
+    eml <- make_eml(metadata_id, system, title, creators, methodDescription, geo_coverage, temp_coverage, dp, mn@endpoint)
     eml_xml <- as(eml, "XMLInternalElementNode")
     #print(eml_xml)
     eml_file <- tempfile()
@@ -126,8 +126,26 @@ cov <- function(gc, tempc) {
 
 #' Create a minimal EML document.
 #' Creating EML should be more complete, but this minimal example will suffice to create a valid document.
-make_eml <- function(id, system, title, creators, methodDescription=NA, geo_coverage=NA, temp_coverage=NA) {
+make_eml <- function(id, system, title, creators, methodDescription=NA, geo_coverage=NA, temp_coverage=NA, datapackage=NA, endpoint=NA) {
     #dt <- eml_dataTable(dat, description=description)
+    oe_list <- as(list(), "ListOfotherEntity")
+    if (!is.na(datapackage)) {
+        for (id in getIdentifiers(datapackage)) {
+            print(paste("Creating entity for ", id, sep=" "))
+            current_do <- getMember(datapackage, id)
+            oe <- new("otherEntity", entityName=basename(current_do@filename), entityType="application/zip")
+            oe@physical@objectName <- basename(current_do@filename)
+            oe@physical@size <- current_do@sysmeta@size
+            if (!is.na(endpoint)) {
+                oe@physical@distribution@online@url <- paste(endpoint, id, sep="/")
+            }
+            f <- new("externallyDefinedFormat", formatName="ESRI Arc/View ShapeFile")
+            df <- new("dataFormat", externallyDefinedFormat=f)
+            oe@physical@dataFormat <- df
+            oe_list <- c(oe_list, oe)
+        }
+    }
+
     creator <- new("ListOfcreator", lapply(as.list(with(creators, paste(given, " ", surname, " ", "<", email, ">", sep=""))), as, "creator"))
     ds <- new("dataset",
               title = title,
@@ -135,10 +153,12 @@ make_eml <- function(id, system, title, creators, methodDescription=NA, geo_cove
               creator = creator,
               contact = as(creator[[1]], "contact"),
               #coverage = new("coverage"),
-              pubDate = as.character(Sys.Date())
+              pubDate = as.character(Sys.Date()),
               #dataTable = c(dt),
+              otherEntity = as(oe_list, "ListOfotherEntity")
               #methods = new("methods"))
              )
+
     if (!is.na(methodDescription)) {
         ms <- new("methodStep", description=methodDescription)
         listms <- new("ListOfmethodStep", list(ms))
@@ -173,9 +193,10 @@ upload_object <- function(mn, filename, newid, format, public=TRUE, replicate=FA
 
     # Upload the data to the MN using create(), checking for success and a returned identifier
     created_id <- create(mn, newid, filename, sysmeta)
-    if (is.null(created_id) | !grepl(newid, xmlValue(xmlRoot(created_id)))) {
+    if (is.null(created_id) || !grepl(newid, xmlValue(xmlRoot(created_id)))) {
         # TODO: Process the error
         message(paste0("Error on returned identifier: ", created_id))
+        return(newid)
     } else {
         return(newid)
     }
