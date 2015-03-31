@@ -202,6 +202,72 @@ upload_object <- function(mn, filename, newid, format, public=TRUE, replicate=FA
     }
 }
 
+#' Upload a CSV file with an associated metadata file to the repository.
+#' Create a package description in the process.
+upload_csv_with_eml <- function(d, mn, csvfile, emlfile, assignDOI=FALSE) {
+    savewd <- getwd()
+    print(paste("Processing ", d))
+    setwd(d)
+
+    # Create a DataPackage to track all of the data objects that are created
+    dp <- DataPackage()
+    node <- mn@identifier
+    cm <- CertificateManager()
+    user <- showClientSubject(cm)
+
+    format <- "text/csv"
+    fq_csvfile <- normalizePath(csvfile)
+    # Generate a unique identifier for the object
+    identifier <- paste0("urn:uuid:", UUIDgenerate())
+    # upload csv file to the data repository
+    identifier <- upload_object(mn, emlfile, identifier, format)
+    # Create a DataObject and add it to the DataPackage for tracking
+    data_object <- new("DataObject", id=identifier, format=format, user=user, mnNodeId=node, filename=fq_csvfile)
+    addData(dp, data_object)
+    message(paste("Uploaded: ", identifier))
+
+    # Generate a unique identifier for the object
+    if (assignDOI) {
+        metadata_id <- generateIdentifier(mn, "DOI")
+        # TODO: check if we actually got one, if not then error
+        system <- "doi"
+    } else {
+        metadata_id <- paste0("urn:uuid:", UUIDgenerate())
+        system <- "uuid"
+    }
+
+    # upload metadata to the repository
+    fq_emlfile <- normalizePath(emlfile)
+    return_id <- upload_object(mn, emlfile, metadata_id, "eml://ecoinformatics.org/eml-2.1.1")
+    message(paste0("Uploaded metadata with id: ", return_id))
+
+    # create and upload package linking the data file and metadata
+    data_id_list <- getIdentifiers(dp)
+    mdo <- new("DataObject", id=metadata_id, filename=emlfile, format="eml://ecoinformatics.org/eml-2.1.1", user=user, mnNodeId=node)
+    addData(dp, mdo)
+    insertRelationship(dp, subjectID=metadata_id, objectIDs=data_id_list)
+    tf <- tempfile()
+    serialization_id <- paste0("urn:uuid:", UUIDgenerate())
+    status <- serializePackage(dp, tf, id=serialization_id)
+    return_id <- upload_object(mn, tf, serialization_id, "http://www.openarchives.org/ore/terms")
+    message(paste0("Uploaded data package with id: ", return_id))
+    unlink(tf)
+
+    # Revert back to our calling directory
+    setwd(savewd)
+}
+
+upload_vertnet <- function() {
+    cn <- CNode("STAGING2")                     # Use Testing repository
+    mn <- getMNode(cn, "urn:node:mnTestKNB")    # Use Testing repository
+    #cn <- CNode()                               # Use Production repository
+    #mn <- getMNode(cn, "urn:node:KNB")          # Use Production repository
+    d <- "vertnet"
+    csvfile <- 'vertnet_latest_amphibians_truncated.csv'
+    emlfile <- 'VNAmphibians.eml'
+    upload_csv_with_eml(d, mn, csvfile, emlfile, assignDOI=FALSE)
+}
+
 #' main method to iterate across directories, uploading each data set
 main <- function() {
     cn <- CNode("STAGING2")                     # Use Testing repository
