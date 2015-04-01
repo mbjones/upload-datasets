@@ -220,7 +220,7 @@ upload_csv_with_eml <- function(d, mn, csvfile, emlfile, assignDOI=FALSE) {
     # Generate a unique identifier for the object
     identifier <- paste0("urn:uuid:", UUIDgenerate())
     # upload csv file to the data repository
-    identifier <- upload_object(mn, emlfile, identifier, format)
+    identifier <- upload_object(mn, csvfile, identifier, format)
     # Create a DataObject and add it to the DataPackage for tracking
     data_object <- new("DataObject", id=identifier, format=format, user=user, mnNodeId=node, filename=fq_csvfile)
     addData(dp, data_object)
